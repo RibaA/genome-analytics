@@ -56,3 +56,29 @@ counts_df = counts_df[genes_to_keep]
 min_val = counts_df.min().min()
 max_val = counts_df.max().max()
 print(f"Data range: {min_val} to {max_val}")
+
+# association analysis
+inference = DefaultInference(n_cpus=8)
+dds = DeseqDataSet(
+    counts=counts_df,
+    metadata=metadata,
+    design="~condition",
+    refit_cooks=True,
+    inference=inference,
+    # n_cpus=8, # n_cpus can be specified here or in the inference object
+)
+
+
+
+dds.deseq2()
+print(dds)
+
+
+print(dds.varm["dispersions"])
+print(dds.varm["LFC"])
+
+ds = DeseqStats(dds, contrast=["condition", "B", "A"], inference=inference)
+ds.summary()
+
+ds = DeseqStats(dds, contrast=["condition", "A", "B"], inference=inference)
+ds.summary()
