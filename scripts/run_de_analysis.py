@@ -11,7 +11,10 @@ import pickle as pkl
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
+import statsmodels.api as sm
 
+from statsmodels.stats.multitest import multipletests
+from sklearn.linear_model import LogisticRegression
 from pydeseq2.dds import DeseqDataSet
 from pydeseq2.default_inference import DefaultInference
 from pydeseq2.ds import DeseqStats
@@ -83,7 +86,7 @@ expr_tpm_filtered = expr_tpm_filtered.T
 expr_logtpm_filtered = np.log2(expr_tpm_filtered + 1)
 expr_logtpm_filtered = expr_logtpm_filtered
 
-# assess association of genes across two groups of IO response (R vs NR)
+# Part 1: assess association of genes across two groups of IO response (NR vs R)
 # create 'DeseqDataSet' object
 fit_deseq = DeseqDataSet(
     counts=expr_tpm_filtered,
@@ -101,5 +104,34 @@ print(fit_deseq.varm["LFC"])
 
 # statistical analysis with the DeseqStats class
 # response R vs NR
-ds = DeseqStats(fit_deseq, contrast=["response", "R", "NR"])
+ds = DeseqStats(fit_deseq, contrast=["response", "NR", "R"])
 ds.summary()
+
+# Part 2: assess association of genes across two groups of IO response (NR vs R)
+#data = pd.concat([clin.loc[:, "response"], expr_logtpm_filtered], axis=1)
+y = clin.loc[:, "response"].map({"R": 1, "NR": 0})
+X = expr_logtpm_filtered
+
+results = []
+
+for gene in X.columns:
+    X_gene = sm.add_constant(X[[gene]])  # add intercept
+    model = sm.Logit(y, X_gene)
+    
+    try:
+        res = model.fit(disp=0)  # disp=0 suppresses output
+        coef = res.params[gene]
+        pval = res.pvalues[gene]
+        results.append((gene, coef, pval))
+    except:
+        results.append((gene, None, None))  # Handle failed fits
+
+# apply multiple test correction
+results_df = pd.DataFrame(results, columns=["gene_name", "coefficient", "p_value"])
+results_df.dropna(inplace=True)
+
+# Add FDR using Benjamini-Hochberg
+results_df["FDR"] = multipletests(results_df["p_value"], method="fdr_bh")[1]
+
+# Sort by FDR or p-value
+results_df = results_df.sort_values("p_value")
